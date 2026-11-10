@@ -2,14 +2,15 @@ apiVersion: automation.cloudbees.io/v1alpha1
 kind: workflow
 name: monorepo-ci
 
+# Manual dispatch only: the SonarQube URL is a run input, and the inputs context
+# is only defined for workflow_dispatch runs.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - "**"
-  pull_request:
-    branches:
-      - "**"
+    inputs:
+      sonar-host-url:
+        type: string
+        description: URL of the centralized SonarQube server, for example https://sonar.example.com
+        default: https://sonar.example.com
 
 # One reusable call per component. The two jobs have no dependency on each
 # other, so they run in parallel and are scanned independently.
@@ -21,6 +22,7 @@ jobs:
       working-directory: api
       component-type: java
       sonar-project-key: onecicd-sonarqube-monorepo-api
+      sonar-host-url: ${{ inputs.sonar-host-url }}
     secrets: inherit
     vars: inherit
 
@@ -31,5 +33,6 @@ jobs:
       working-directory: ui
       component-type: node
       sonar-project-key: onecicd-sonarqube-monorepo-ui
+      sonar-host-url: ${{ inputs.sonar-host-url }}
     secrets: inherit
     vars: inherit

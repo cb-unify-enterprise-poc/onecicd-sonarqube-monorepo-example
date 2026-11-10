@@ -35,7 +35,7 @@ It solves seven problems that show up when a monorepo is pointed at SonarQube:
 
 ```mermaid
 flowchart TD
-    CALLER["monorepo-ci.yaml<br/>manual, push, pull request"]
+    CALLER["monorepo-ci.yaml<br/>manual dispatch with sonar-host-url input"]
     CALLER -->|"working-directory: api<br/>component-type: java"| APIWF["sonar-plugin.yaml<br/>(api invocation)"]
     CALLER -->|"working-directory: ui<br/>component-type: node"| UIWF["sonar-plugin.yaml<br/>(ui invocation)"]
 
@@ -48,7 +48,7 @@ flowchart TD
 
     APIWF --> APIJOB
     UIWF --> UIJOB
-    APIS -->|"project key<br/>onecicd-sonarqube-monorepo-api"| SQ[("Central SonarQube server<br/>vars.SONARQUBE_URL")]
+    APIS -->|"project key<br/>onecicd-sonarqube-monorepo-api"| SQ[("Central SonarQube server<br/>inputs.sonar-host-url")]
     UIS -->|"project key<br/>onecicd-sonarqube-monorepo-ui"| SQ
     APIS --> EVA["publish-evidence-item@v1<br/>(api)"]
     UIS --> EVU["publish-evidence-item@v1<br/>(ui)"]
@@ -80,16 +80,17 @@ The two component jobs have no dependency on each other, so they run in parallel
 
 ## Required CloudBees configuration
 
-Configure these in CloudBees Unify (component, sub-organization or organization scope). Nothing is stored in this repository.
+Configure these secrets in CloudBees Unify (component, sub-organization or organization scope). Nothing is stored in this repository.
 
 ```text
-Property:
-SONARQUBE_URL          (read in workflows as vars.SONARQUBE_URL)
-
 Secrets:
 SONAR_USERNAME
 SONAR_PASSWORD
 ```
+
+The SonarQube URL is not stored anywhere in the repository. You enter it in the `sonar-host-url` input when you start the run. The default, `https://sonar.example.com`, is a placeholder and must be replaced.
+
+`monorepo-ci.yaml` is manual-dispatch only because the `inputs` context is only defined for `workflow_dispatch` runs. To run on push or pull request, replace the input with a CloudBees property read as `vars.<NAME>` and pass that to `sonar-host-url`.
 
 The scan step uses the deployed-runtime input names `url`, `username`, `password` and `workspace-dir`.
 
@@ -114,9 +115,9 @@ This example assumes proxy and trust injection are configured **at the runner le
 
 ## Running it
 
-Run `.cloudbees/workflows/monorepo-ci.yaml` first (manual dispatch, or push). It calls `sonar-plugin.yaml` once for `api` and once for `ui`.
+Run `.cloudbees/workflows/monorepo-ci.yaml` first (manual dispatch, entering your SonarQube URL in `sonar-host-url`). It calls `sonar-plugin.yaml` once for `api` and once for `ui`.
 
-Each run publishes an evidence item per component with the component, directory, project key, type, commit SHA, ref, server variable name (`SONARQUBE_URL`, never its value), run ID, build and scan result, and the finding counts the action returns. No credentials are written to evidence.
+Each run publishes an evidence item per component with the component, directory, project key, type, commit SHA, ref, SonarQube input name (`sonar-host-url`, never its value), run ID, build and scan result, and the finding counts the action returns. No credentials are written to evidence.
 
 ## Local checks
 
@@ -137,13 +138,13 @@ cd ui  && npm ci && npm test && npm run build
 The scanner did not read the component's properties file, usually because `workspace-dir` points elsewhere. Confirm `<component>/sonar-project.properties` exists and contains `sonar.projectKey`. The validation step also fails the job on a key mismatch.
 
 **The SonarQube URL is unreachable.**
-Check that `SONARQUBE_URL` is set, includes the scheme and port, resolves in DNS from the Edge Runner, and is allowed through the network path and proxy (`NO_PROXY` where direct access is needed).
+Check that the `sonar-host-url` you entered is not the placeholder, includes the scheme and port, resolves in DNS from the Edge Runner, and is allowed through the network path and proxy (`NO_PROXY` where direct access is needed).
 
 **Java TLS or PKIX failure.**
 The runner does not trust the SonarQube server's certificate. Fix the corporate CA in the Edge Runner trust-bundle configuration. Do not add certificates to this repository or disable certificate checks.
 
 **Action validation reports `url` missing.**
-The input is named `url`, not `server-url`. Check that `vars.SONARQUBE_URL` resolves; an empty variable produces the same error.
+The input is named `url`, not `server-url`. Check that `inputs.sonar-host-url` reaches the scan step; an empty value produces the same error.
 
 **Action validation reports an unsupported input.**
 Use only inputs the action descriptor defines (`url`, `username`, `password`, `token`, `ref`, `workspace-dir`, `cmakeList-path`, `sonar-inclusion`, `sonar-exclusion`, `cover-file-name`). Inputs such as `working-directory` or `sonar-project-key` are not defined by the action.

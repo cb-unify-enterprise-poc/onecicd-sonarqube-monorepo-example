@@ -24,6 +24,10 @@ on:
         description: Expected sonar.projectKey; must match the component's sonar-project.properties
         type: string
         required: true
+      sonar-host-url:
+        description: URL of the centralized SonarQube server, supplied by the caller
+        type: string
+        required: true
       runner-label:
         description: First Edge Runner label
         type: string
@@ -108,7 +112,7 @@ jobs:
         id: sonar
         uses: cloudbees-io/sonarqube-plugin@v1
         with:
-          url: ${{ vars.SONARQUBE_URL }}
+          url: ${{ inputs.sonar-host-url }}
           username: ${{ secrets.SONAR_USERNAME }}
           password: ${{ secrets.SONAR_PASSWORD }}
           workspace-dir: /cloudbees/workspace/${{ inputs.working-directory }}
@@ -126,7 +130,7 @@ jobs:
             | Component directory | ${{ inputs.working-directory }} |
             | Component type | ${{ inputs.component-type }} |
             | SonarQube project key | ${{ inputs.sonar-project-key }} |
-            | SonarQube server variable | SONARQUBE_URL |
+            | SonarQube server input | sonar-host-url (value not recorded) |
             | Commit SHA | ${{ cloudbees.scm.sha }} |
             | Branch or ref | ${{ cloudbees.scm.ref }} |
             | CloudBees workflow run ID | ${{ cloudbees.run_id }} |
