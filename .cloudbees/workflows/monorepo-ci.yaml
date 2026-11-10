@@ -1,0 +1,35 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: monorepo-ci
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+
+# One reusable call per component. The two jobs have no dependency on each
+# other, so they run in parallel and are scanned independently.
+jobs:
+  api:
+    uses: ./.cloudbees/workflows/sonar-plugin.yaml
+    with:
+      component-name: api
+      working-directory: api
+      component-type: java
+      sonar-project-key: onecicd-sonarqube-monorepo-api
+    secrets: inherit
+    vars: inherit
+
+  ui:
+    uses: ./.cloudbees/workflows/sonar-plugin.yaml
+    with:
+      component-name: ui
+      working-directory: ui
+      component-type: node
+      sonar-project-key: onecicd-sonarqube-monorepo-ui
+    secrets: inherit
+    vars: inherit

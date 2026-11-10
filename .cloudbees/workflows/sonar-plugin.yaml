@@ -1,0 +1,146 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: sonar-plugin
+
+# Reusable workflow: build ONE component, then scan ONLY that component with the
+# centralized SonarQube server. Called once per component by monorepo-ci.yaml.
+
+on:
+  workflow_call:
+    inputs:
+      component-name:
+        description: Short component name, used in job output and evidence (for example api)
+        type: string
+        required: true
+      working-directory:
+        description: Component directory relative to the repository root (for example api)
+        type: string
+        required: true
+      component-type:
+        description: Build type, either java or node
+        type: string
+        required: true
+      sonar-project-key:
+        description: Expected sonar.projectKey; must match the component's sonar-project.properties
+        type: string
+        required: true
+      runner-label:
+        description: First Edge Runner label
+        type: string
+        required: false
+        default: adp-ec2
+      runner-environment:
+        description: Second Edge Runner label
+        type: string
+        required: false
+        default: nonprod
+
+jobs:
+  build-and-scan:
+    runs-on: [adp-ec2, nonprod]
+    steps:
+      - name: Checkout
+        uses: cloudbees-io/checkout@v2
+
+      - name: Validate component and project key
+        uses: docker://alpine:3.20
+        shell: sh
+        env:
+          COMPONENT_DIR: ${{ inputs.working-directory }}
+          COMPONENT_TYPE: ${{ inputs.component-type }}
+          EXPECTED_KEY: ${{ inputs.sonar-project-key }}
+        run: |
+          set -eu
+          case "$COMPONENT_DIR" in
+            ""|/*|*..*) echo "ERROR: working-directory must be a relative path inside the repository, got '$COMPONENT_DIR'"; exit 1 ;;
+          esac
+          case "$COMPONENT_TYPE" in
+            java|node) ;;
+            *) echo "ERROR: component-type must be 'java' or 'node', got '$COMPONENT_TYPE'"; exit 1 ;;
+          esac
+          DIR="/cloudbees/workspace/$COMPONENT_DIR"
+          PROPS="$DIR/sonar-project.properties"
+          [ -d "$DIR" ] || { echo "ERROR: component directory '$COMPONENT_DIR' does not exist in the checked-out repository"; exit 1; }
+          [ -f "$PROPS" ] || { echo "ERROR: '$COMPONENT_DIR/sonar-project.properties' not found; every component needs its own file"; exit 1; }
+          ACTUAL=$(grep -E '^[[:space:]]*sonar\.projectKey[[:space:]]*=' "$PROPS" | head -n 1 | cut -d= -f2- | tr -d '[:space:]')
+          if [ "$ACTUAL" != "$EXPECTED_KEY" ]; then
+            echo "ERROR: sonar.projectKey mismatch for '$COMPONENT_DIR'."
+            echo "  workflow input sonar-project-key : '$EXPECTED_KEY'"
+            echo "  $COMPONENT_DIR/sonar-project.properties : '$ACTUAL'"
+            echo "Fix the caller or the properties file so both name the same stable project key."
+            exit 1
+          fi
+          echo "OK: $COMPONENT_DIR ($COMPONENT_TYPE) will be scanned as SonarQube project '$ACTUAL'"
+
+      # Build and scan MUST share one job: each job gets its own workspace, so a
+      # separate scan job would not receive target/classes or target/dependency.
+      - name: Build and test (Java)
+        if: ${{ inputs.component-type == 'java' }}
+        uses: docker://maven:3.9-eclipse-temurin-17
+        shell: sh
+        env:
+          COMPONENT_DIR: ${{ inputs.working-directory }}
+        run: |
+          set -eu
+          cd "/cloudbees/workspace/$COMPONENT_DIR"
+          mvn -B clean test package dependency:copy-dependencies \
+            -DoutputDirectory=target/dependency
+          test -d target/classes
+          test -d target/dependency
+
+      - name: Build and test (Node)
+        if: ${{ inputs.component-type == 'node' }}
+        uses: docker://node:20
+        shell: sh
+        env:
+          COMPONENT_DIR: ${{ inputs.working-directory }}
+        run: |
+          set -eu
+          cd "/cloudbees/workspace/$COMPONENT_DIR"
+          npm ci
+          npm test
+          npm run build
+
+      # workspace-dir points at the COMPONENT directory, never /cloudbees/workspace.
+      # The action has no project-key input, so the key comes from the
+      # component-local sonar-project.properties validated above.
+      - name: SonarQube scan
+        id: sonar
+        uses: cloudbees-io/sonarqube-plugin@v1
+        with:
+          url: ${{ vars.SONARQUBE_URL }}
+          username: ${{ secrets.SONAR_USERNAME }}
+          password: ${{ secrets.SONAR_PASSWORD }}
+          workspace-dir: /cloudbees/workspace/${{ inputs.working-directory }}
+
+      - name: Publish evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          format: MARKDOWN
+          content: |
+            ## SonarQube scan: ${{ inputs.component-name }}
+
+            | Field | Value |
+            | --- | --- |
+            | Component | ${{ inputs.component-name }} |
+            | Component directory | ${{ inputs.working-directory }} |
+            | Component type | ${{ inputs.component-type }} |
+            | SonarQube project key | ${{ inputs.sonar-project-key }} |
+            | SonarQube server variable | SONARQUBE_URL |
+            | Commit SHA | ${{ cloudbees.scm.sha }} |
+            | Branch or ref | ${{ cloudbees.scm.ref }} |
+            | CloudBees workflow run ID | ${{ cloudbees.run_id }} |
+            | Build result | Succeeded (this step only runs after the build and test steps pass) |
+            | Scan result | Scan step completed; see finding counts below |
+
+            ### Finding counts returned by the action
+
+            | Severity | Count |
+            | --- | --- |
+            | Critical | ${{ steps.sonar.outputs.critical-count }} |
+            | Very high | ${{ steps.sonar.outputs.very-high-count }} |
+            | High | ${{ steps.sonar.outputs.high-count }} |
+            | Medium | ${{ steps.sonar.outputs.medium-count }} |
+            | Low | ${{ steps.sonar.outputs.low-count }} |
+
+            An empty count means the action did not return a value for that severity.

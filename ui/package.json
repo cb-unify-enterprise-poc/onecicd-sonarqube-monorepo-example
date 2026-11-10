@@ -1,0 +1,14 @@
+{
+  "name": "onecicd-sonarqube-monorepo-ui",
+  "version": "1.0.0",
+  "description": "Small Node.js UI component for the OneCICD SonarQube monorepo example",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test",
+    "build": "node scripts/build.js"
+  }
+}

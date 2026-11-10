@@ -1,0 +1,26 @@
+# Build output
+target/
+dist/
+coverage/
+
+# Dependencies
+node_modules/
+
+# Scanner working files
+.scannerwork/
+
+# Trust stores, certificates and keys: never commit these
+adp-java-cacerts
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.crt
+*.cer
+*.der
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
