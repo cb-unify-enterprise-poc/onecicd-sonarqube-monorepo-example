@@ -76,6 +76,8 @@ The two component jobs have no dependency on each other, so they run in parallel
 
 **Stable, explicit project keys.** Each key is written in the properties file and repeated by the caller as `sonar-project-key`. The reusable workflow fails the run when they differ. Without an explicit key, the scan may generate one from the repository or folder name, so renames or path changes quietly create a new project and break history.
 
+**The component folder is made a standalone git root before the scan.** The `cloudbees-io/sonarqube-plugin` action archives `workspace-dir` and appends a `.git` folder from that directory. In a monorepo, `.git` exists only at the repository root, so pointing `workspace-dir` at `api` fails with `tar: .git: Cannot stat`. The workflow therefore runs `git init` and a single local commit inside the component folder just before the scan. Build output (`target/`, `node_modules/`, `dist/`) is excluded from that commit, so it is not archived, but it stays on disk where the scanner needs it. The commit is local to the runner workspace and is never pushed. The commit SHA recorded in CloudBees evidence still comes from the workflow run, not from this snapshot.
+
 **The action has no project-key input.** The `cloudbees-io/sonarqube-plugin` action descriptor does not define one, so the key comes only from `sonar-project.properties`. The workflow's `sonar-project-key` input is used for the consistency check, not passed to the action.
 
 ## Required CloudBees configuration
@@ -142,6 +144,9 @@ Check that the `sonar-host-url` you entered is not the placeholder, includes the
 
 **Java TLS or PKIX failure.**
 The runner does not trust the SonarQube server's certificate. Fix the corporate CA in the Edge Runner trust-bundle configuration. Do not add certificates to this repository or disable certificate checks.
+
+**`tar: .git: Cannot stat: No such file or directory` / `Error appending .git to archive`.**
+`workspace-dir` is a subfolder that is not a git root. Keep the "Make the component a standalone git root" step immediately before the scan, and make sure it runs in the same job and workspace.
 
 **`chdir /cloudbees/workspace/cloudbees/workspace/api: no such file or directory`.**
 `workspace-dir` was given an absolute path. The action prepends `/cloudbees/workspace` itself, so the path is doubled. Use the relative component path (`api`, `ui`), not `/cloudbees/workspace/api`.

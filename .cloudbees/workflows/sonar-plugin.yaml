@@ -105,6 +105,30 @@ jobs:
           npm test
           npm run build
 
+      # The sonarqube-plugin archives workspace-dir and then appends its .git
+      # folder, so workspace-dir must be a git root. In a monorepo only the
+      # repository root has .git, so give the component folder its own tiny git
+      # repo. Build output stays on disk for the scanner but is kept out of the
+      # commit (and so out of the archive) via .git/info/exclude.
+      - name: Make the component a standalone git root for the scan
+        uses: docker://node:20
+        shell: sh
+        env:
+          COMPONENT_DIR: ${{ inputs.working-directory }}
+        run: |
+          set -eu
+          DIR="/cloudbees/workspace/$COMPONENT_DIR"
+          cd "$DIR"
+          git config --global --add safe.directory "$DIR"
+          if [ ! -d .git ]; then
+            git init -q
+          fi
+          printf 'target/\nnode_modules/\ndist/\ncoverage/\n.scannerwork/\n' >> .git/info/exclude
+          git add -A
+          git -c user.name=cloudbees -c user.email=cloudbees@localhost \
+            commit -q -m "Component snapshot for SonarQube scan: $COMPONENT_DIR"
+          echo "OK: $COMPONENT_DIR is a standalone git root"
+
       # workspace-dir points at the COMPONENT directory, never the repository root.
       # The action prepends /cloudbees/workspace itself, so pass a RELATIVE path
       # (api), not an absolute one; /cloudbees/workspace/api would be doubled.
