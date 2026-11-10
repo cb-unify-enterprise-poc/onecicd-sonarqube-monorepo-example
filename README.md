@@ -61,14 +61,14 @@ The two component jobs have no dependency on each other, so they run in parallel
 | Term | Example here | What it is |
 | --- | --- | --- |
 | Repository root | `/cloudbees/workspace` | Where `cloudbees-io/checkout@v2` puts the whole repository. **Never scan this.** |
-| Component working directory | `/cloudbees/workspace/api` | The folder for one component. This is what `workspace-dir` points at. |
+| Component working directory | `api` (on disk: `/cloudbees/workspace/api`) | The folder for one component. This is what `workspace-dir` points at, as the relative path `api`. |
 | SonarQube project key | `onecicd-sonarqube-monorepo-api` | The identity of the project on the SonarQube server. Set in the component's `sonar-project.properties`. |
 
 ## Design decisions
 
 **Every component has its own SonarQube project.** Quality gates, issue history, ownership and new-code periods are per project. One project for the whole repository mixes Java and JavaScript findings, hides which component regressed, and makes one gate decide for everything. Separate projects also let teams own their components.
 
-**`workspace-dir` points at the component, not the repository root.** The scanner indexes everything under the directory it is given. Pointing it at the root makes it pick up `api/` and `ui/` together (and any other folder), so findings land in one project and paths are wrong. Pointing it at `/cloudbees/workspace/api` means the scanner reads `api/sonar-project.properties` and sees only `api/`. Every path in that file (`src/main/java`, `target/classes`) is relative to the component directory.
+**`workspace-dir` points at the component, not the repository root.** The scanner indexes everything under the directory it is given. Pointing it at the root makes it pick up `api/` and `ui/` together (and any other folder), so findings land in one project and paths are wrong. Pointing it at `api` (the action prepends `/cloudbees/workspace`, so this is `/cloudbees/workspace/api`) means the scanner reads `api/sonar-project.properties` and sees only `api/`. Every path in that file (`src/main/java`, `target/classes`) is relative to the component directory.
 
 **Java is compiled before the scan.** SonarQube's Java analysis needs compiled classes (`sonar.java.binaries`, `sonar.java.test.binaries`) and the dependency JARs (`sonar.java.libraries`). Without them, analysis is incomplete or fails with missing-binaries errors. So the workflow runs Maven first, then copies runtime dependencies into `target/dependency`.
 
@@ -129,7 +129,7 @@ cd ui  && npm ci && npm test && npm run build
 ## Troubleshooting
 
 **The scanner indexes both `api/` and `ui/`.**
-`workspace-dir` points at the repository root. It must be `/cloudbees/workspace/<component>`. Also check that no `sonar-project.properties` exists at the root.
+`workspace-dir` points at the repository root. It must be the relative component path, for example `api`. Also check that no `sonar-project.properties` exists at the root.
 
 **Java reports missing binaries or unresolved classes.**
 `target/classes` or `target/dependency` is missing in the scanner's workspace. Confirm the Maven step ran in the same job before the scan, that it finished successfully, and that `sonar.java.binaries` and `sonar.java.libraries` match the build output paths.
@@ -142,6 +142,9 @@ Check that the `sonar-host-url` you entered is not the placeholder, includes the
 
 **Java TLS or PKIX failure.**
 The runner does not trust the SonarQube server's certificate. Fix the corporate CA in the Edge Runner trust-bundle configuration. Do not add certificates to this repository or disable certificate checks.
+
+**`chdir /cloudbees/workspace/cloudbees/workspace/api: no such file or directory`.**
+`workspace-dir` was given an absolute path. The action prepends `/cloudbees/workspace` itself, so the path is doubled. Use the relative component path (`api`, `ui`), not `/cloudbees/workspace/api`.
 
 **Action validation reports `url` missing.**
 The input is named `url`, not `server-url`. Check that `inputs.sonar-host-url` reaches the scan step; an empty value produces the same error.

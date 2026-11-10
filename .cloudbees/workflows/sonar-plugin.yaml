@@ -105,7 +105,9 @@ jobs:
           npm test
           npm run build
 
-      # workspace-dir points at the COMPONENT directory, never /cloudbees/workspace.
+      # workspace-dir points at the COMPONENT directory, never the repository root.
+      # The action prepends /cloudbees/workspace itself, so pass a RELATIVE path
+      # (api), not an absolute one; /cloudbees/workspace/api would be doubled.
       # The action has no project-key input, so the key comes from the
       # component-local sonar-project.properties validated above.
       - name: SonarQube scan
@@ -115,7 +117,7 @@ jobs:
           url: ${{ inputs.sonar-host-url }}
           username: ${{ secrets.SONAR_USERNAME }}
           password: ${{ secrets.SONAR_PASSWORD }}
-          workspace-dir: /cloudbees/workspace/${{ inputs.working-directory }}
+          workspace-dir: ${{ inputs.working-directory }}
 
       - name: Publish evidence
         uses: cloudbees-io/publish-evidence-item@v1
