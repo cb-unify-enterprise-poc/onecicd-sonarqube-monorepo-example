@@ -108,13 +108,14 @@ jobs:
       # The sonarqube-plugin archives workspace-dir and then appends its .git
       # folder, so workspace-dir must be a git root. In a monorepo only the
       # repository root has .git, so give the component folder its own tiny git
-      # repo. Build output stays on disk for the scanner but is kept out of the
-      # commit (and so out of the archive) via .git/info/exclude.
+      # repo. Java build output (target/) is committed because the scanner only
+      # sees the archive; Node output folders are kept out via .git/info/exclude.
       - name: Make the component a standalone git root for the scan
         uses: docker://node:20
         shell: sh
         env:
           COMPONENT_DIR: ${{ inputs.working-directory }}
+          COMPONENT_TYPE: ${{ inputs.component-type }}
         run: |
           set -eu
           DIR="/cloudbees/workspace/$COMPONENT_DIR"
@@ -123,7 +124,13 @@ jobs:
           if [ ! -d .git ]; then
             git init -q
           fi
-          printf 'target/\nnode_modules/\ndist/\ncoverage/\n.scannerwork/\n' >> .git/info/exclude
+          # Java needs target/classes and target/dependency inside the archive, so
+          # only the UI-style output folders are excluded for it.
+          if [ "$COMPONENT_TYPE" = "java" ]; then
+            printf '.scannerwork/\n' >> .git/info/exclude
+          else
+            printf 'node_modules/\ndist/\ncoverage/\n.scannerwork/\n' >> .git/info/exclude
+          fi
           git add -A
           git -c user.name=cloudbees -c user.email=cloudbees@localhost \
             commit -q -m "Component snapshot for SonarQube scan: $COMPONENT_DIR"
